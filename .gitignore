@@ -1,0 +1,32 @@
+# ── SECRETS (NEVER UPLOAD THESE) ──
+.env
+.env.*
+*.pem
+
+# ── Python & Environments ──
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.venv/
+
+# ── Local Databases ──
+*.db
+*.sqlite3
+test.db
+
+# ── IDEs & OS Files ──
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ── Testing & Logs ──
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# ── Streamlit ──
+.streamlit/

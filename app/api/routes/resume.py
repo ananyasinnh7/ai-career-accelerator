@@ -1,21 +1,27 @@
 """
 app/api/routes/resume.py
 ─────────────────────────
-Route handler for POST /score-resume.
+Route handler for POST /api/v1/score-resume.
 
 Flow
 ────
 1.  Validate file type and read bytes.
-2.  Extract text from PDF (runs in thread pool — pdfplumber is CPU-bound).
-3.  Call Gemini for evaluation (runs in thread pool — network I/O).
-4.  Persist the result to PostgreSQL.
+2.  Extract text from PDF (runs in thread pool).
+3.  Call Gemini for evaluation (runs in thread pool).
+4.  Persist the result — linked to the user if authenticated.
 5.  Return the structured JSON response.
+
+Authentication is OPTIONAL on this endpoint:
+  - Authenticated candidates → analysis saved under their account.
+  - Anonymous requests       → analysis saved with user_id=None (Phase 1 compat).
 """
 
 import asyncio
 from functools import partial
+from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -23,25 +29,47 @@ from app.core.exceptions import (
     EmptyPDFError,
     GeminiAPIError,
     GeminiParseError,
+    InvalidTokenError,
     PDFExtractionError,
     PDFTooLargeError,
 )
 from app.core.logging import get_logger
-from app.db.models import ResumeAnalysis
+from app.db.models import ResumeAnalysis, User
 from app.db.session import get_db
 from app.schemas.resume import ResumeScoreResponse
+from app.services.auth_service import decode_access_token, get_user_by_id
 from app.services.gemini_service import score_resume
 from app.services.pdf_service import extract_text_from_pdf
 
-router = APIRouter(prefix="/api/v1", tags=["Resume Scoring"])
-logger = get_logger(__name__)
+router   = APIRouter(prefix="/api/v1", tags=["Resume Scoring"])
+logger   = get_logger(__name__)
 settings = get_settings()
+
+_bearer = HTTPBearer(auto_error=False)
 
 _ALLOWED_CONTENT_TYPES = {
     "application/pdf",
     "application/x-pdf",
-    "application/octet-stream",  # some browsers use this for PDF
+    "application/octet-stream",
 }
+
+
+def _get_optional_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: Session = Depends(get_db),
+) -> Optional[User]:
+    """
+    Attempt to resolve the current user from the Bearer token.
+    Returns None (without raising) if no token is provided or it is invalid.
+    This keeps the endpoint usable anonymously.
+    """
+    if not credentials:
+        return None
+    try:
+        payload = decode_access_token(credentials.credentials)
+        return get_user_by_id(db, int(payload["sub"]))
+    except (InvalidTokenError, Exception):
+        return None
 
 
 @router.post(
@@ -51,7 +79,8 @@ _ALLOWED_CONTENT_TYPES = {
     summary="Score a resume against a job description",
     description=(
         "Upload a PDF resume and provide a job description. "
-        "Returns an AI-generated match score, missing skills, and a recommended project."
+        "Authenticated candidates have the result saved to their history. "
+        "Anonymous use is still supported."
     ),
 )
 async def score_resume_endpoint(
@@ -62,17 +91,18 @@ async def score_resume_endpoint(
         description="Full text of the target job description (min 50 characters).",
     ),
     db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(_get_optional_user),
 ) -> ResumeScoreResponse:
     """
     Evaluate how well a candidate's resume matches the target job description.
     """
-    # ── 1. Basic file validation ───────────────────────────────────────────────
+    # ── 1. File validation ─────────────────────────────────────────────────────
     if resume.content_type not in _ALLOWED_CONTENT_TYPES and not (
         resume.filename or ""
     ).lower().endswith(".pdf"):
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=f"Only PDF files are accepted. Received content-type: {resume.content_type}",
+            detail=f"Only PDF files are accepted. Received: {resume.content_type}",
         )
 
     file_bytes = await resume.read()
@@ -84,44 +114,36 @@ async def score_resume_endpoint(
         )
 
     logger.info(
-        "Received resume '%s' (%d bytes) for scoring",
+        "Resume scoring request — file='%s' size=%d user=%s",
         resume.filename,
         len(file_bytes),
+        current_user.email if current_user else "anonymous",
     )
 
-    # ── 2. PDF text extraction (offloaded to thread pool) ─────────────────────
+    # ── 2. PDF text extraction ─────────────────────────────────────────────────
     try:
-        resume_text: str = await asyncio.to_thread(
-            extract_text_from_pdf, file_bytes
-        )
+        resume_text: str = await asyncio.to_thread(extract_text_from_pdf, file_bytes)
     except PDFTooLargeError as exc:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc))
-    except EmptyPDFError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
-    except PDFExtractionError as exc:
+    except (EmptyPDFError, PDFExtractionError) as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
 
-    # ── 3. Gemini evaluation (offloaded to thread pool) ───────────────────────
+    # ── 3. Gemini evaluation ───────────────────────────────────────────────────
     try:
         result: ResumeScoreResponse = await asyncio.to_thread(
             partial(score_resume, resume_text, job_description)
         )
     except GeminiAPIError as exc:
         logger.error("Gemini API error: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"AI evaluation service error: {exc}",
-        )
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"AI service error: {exc}")
     except GeminiParseError as exc:
         logger.error("Gemini parse error: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"AI response could not be parsed: {exc}",
-        )
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"AI response parse error: {exc}")
 
-    # ── 4. Persist to database ─────────────────────────────────────────────────
+    # ── 4. Persist — link to user if authenticated ─────────────────────────────
     try:
         analysis = ResumeAnalysis(
+            user_id=current_user.id if current_user else None,
             original_filename=resume.filename,
             resume_text=resume_text,
             job_description=job_description,
@@ -133,11 +155,15 @@ async def score_resume_endpoint(
         )
         db.add(analysis)
         db.commit()
-        logger.info("Persisted ResumeAnalysis id=%d score=%d", analysis.id, analysis.score)
+        logger.info(
+            "Persisted ResumeAnalysis id=%d score=%d user_id=%s",
+            analysis.id,
+            analysis.score,
+            current_user.id if current_user else "anonymous",
+        )
     except Exception as exc:
-        # Non-fatal: log and continue — the response is still returned to the client
-        logger.error("Failed to persist analysis to DB: %s", exc)
+        logger.error("Failed to persist analysis: %s", exc)
         db.rollback()
 
-    # ── 5. Return structured response ─────────────────────────────────────────
+    # ── 5. Return response ─────────────────────────────────────────────────────
     return result

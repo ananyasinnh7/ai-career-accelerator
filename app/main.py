@@ -12,13 +12,13 @@ Startup sequence
 """
 from dotenv import load_dotenv
 load_dotenv()
-from contextlib import asynccontextmanager
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import health, resume
+from app.api.routes import health, resume, auth, candidates
 from app.core.config import get_settings
 from app.core.exceptions import (
     CareerAcceleratorError,
@@ -32,11 +32,10 @@ from app.core.logging import configure_logging, get_logger
 from app.db.session import create_all_tables
 
 configure_logging()
-logger = get_logger(__name__)
+logger   = get_logger(__name__)
 settings = get_settings()
 
 
-# ── Lifespan (replaces deprecated @app.on_event) ──────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting AI Career Accelerator API [env=%s]", settings.app_env)
@@ -45,15 +44,14 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down AI Career Accelerator API")
 
 
-# ── App factory ────────────────────────────────────────────────────────────────
 def create_app() -> FastAPI:
     app = FastAPI(
         title="AI Career Accelerator",
         description=(
             "Two-sided talent matchmaking platform. "
-            "Phase 1: Resume scoring against job descriptions using Google Gemini."
+            "Phase 2: Auth + Candidate Profiles + Resume Scoring."
         ),
-        version="0.1.0",
+        version="0.2.0",
         lifespan=lifespan,
         docs_url="/docs",
         redoc_url="/redoc",
@@ -68,7 +66,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # ── Exception handlers ────────────────────────────────────────────────────
+    # ── Exception handlers ─────────────────────────────────────────────────────
     @app.exception_handler(PDFTooLargeError)
     async def pdf_too_large_handler(request: Request, exc: PDFTooLargeError):
         return JSONResponse(status_code=413, content={"detail": str(exc), "error_type": "PDFTooLargeError"})
@@ -93,9 +91,11 @@ def create_app() -> FastAPI:
     async def base_error_handler(request: Request, exc: CareerAcceleratorError):
         return JSONResponse(status_code=500, content={"detail": str(exc), "error_type": type(exc).__name__})
 
-    # ── Routers ───────────────────────────────────────────────────────────────
+    # ── Routers ────────────────────────────────────────────────────────────────
     app.include_router(health.router)
     app.include_router(resume.router)
+    app.include_router(auth.router)
+    app.include_router(candidates.router)
 
     return app
 
