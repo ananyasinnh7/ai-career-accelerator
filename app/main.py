@@ -94,8 +94,8 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=500, content={"detail": str(exc), "error_type": type(exc).__name__})
 
     # ── Routers ───────────────────────────────────────────────────────────────
-    app.include_router(health.router)
-    app.include_router(resume.router)
+    app.include_router(health.router, prefix="/api")
+    app.include_router(resume.router, prefix="/api")
 
     return app
 
