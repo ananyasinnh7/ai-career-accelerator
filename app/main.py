@@ -1,7 +1,7 @@
 """
 app/main.py
 ────────────
-FastAPI application factory.
+FastAPI application factory — Phase 3 complete.
 
 Startup sequence
 ────────────────
@@ -18,7 +18,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import health, resume
+from app.api.routes import health, resume, generation
 from app.core.config import get_settings
 from app.core.exceptions import (
     CareerAcceleratorError,
@@ -45,21 +45,21 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down AI Career Accelerator API")
 
 
-# ── App factory ────────────────────────────────────────────────────────────────
+# ── App factory ──────────────────────────────────────────────────────────────
 def create_app() -> FastAPI:
     app = FastAPI(
         title="AI Career Accelerator",
         description=(
             "Two-sided talent matchmaking platform. "
-            "Phase 1: Resume scoring against job descriptions using Google Gemini."
+            "Phase 3: Resume rewriting, cover letter generation, and PDF export."
         ),
-        version="0.1.0",
+        version="0.3.0",
         lifespan=lifespan,
         docs_url="/docs",
         redoc_url="/redoc",
     )
 
-    # ── CORS ───────────────────────────────────────────────────────────────────
+    # ── CORS ───────────────────────────────────────────────────────────────
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"] if settings.app_env == "development" else [],
@@ -93,9 +93,10 @@ def create_app() -> FastAPI:
     async def base_error_handler(request: Request, exc: CareerAcceleratorError):
         return JSONResponse(status_code=500, content={"detail": str(exc), "error_type": type(exc).__name__})
 
-    # ── Routers ───────────────────────────────────────────────────────────────
+    # ── Routers ──────────────────────────────────────────────────────────────
     app.include_router(health.router)
     app.include_router(resume.router)
+    app.include_router(generation.router)  # Phase 3 routes
 
     return app
 
