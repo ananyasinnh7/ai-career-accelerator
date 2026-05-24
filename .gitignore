@@ -30,3 +30,11 @@ htmlcov/
 
 # ── Streamlit ──
 .streamlit/
+
+# Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
+
+# MacOS
+.DS_Store
