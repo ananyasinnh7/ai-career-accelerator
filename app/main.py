@@ -1,24 +1,17 @@
 """
 app/main.py
 ────────────
-FastAPI application factory — Phase 3 complete.
-
-Startup sequence
-────────────────
-1. Configure logging.
-2. Create DB tables (idempotent).
-3. Register exception handlers.
-4. Mount routers.
+FastAPI application factory — Phase 2 complete.
 """
 from dotenv import load_dotenv
 load_dotenv()
-from contextlib import asynccontextmanager
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import health, resume, generation
+from app.api.routes import health, resume, auth, candidates, jobs
 from app.core.config import get_settings
 from app.core.exceptions import (
     CareerAcceleratorError,
@@ -32,11 +25,10 @@ from app.core.logging import configure_logging, get_logger
 from app.db.session import create_all_tables
 
 configure_logging()
-logger = get_logger(__name__)
+logger   = get_logger(__name__)
 settings = get_settings()
 
 
-# ── Lifespan (replaces deprecated @app.on_event) ──────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting AI Career Accelerator API [env=%s]", settings.app_env)
@@ -45,30 +37,32 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down AI Career Accelerator API")
 
 
-# ── App factory ──────────────────────────────────────────────────────────────
 def create_app() -> FastAPI:
     app = FastAPI(
         title="AI Career Accelerator",
         description=(
             "Two-sided talent matchmaking platform. "
-            "Phase 3: Resume rewriting, cover letter generation, and PDF export."
+            "Phase 2: Auth + Candidate Profiles + Job Postings + AI Matching Engine."
         ),
-        version="0.3.0",
+        version="0.2.0",
         lifespan=lifespan,
         docs_url="/docs",
         redoc_url="/redoc",
     )
 
-    # ── CORS ───────────────────────────────────────────────────────────────
     app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"] if settings.app_env == "development" else [],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "https://*.vercel.app",
+        "*",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
     )
 
-    # ── Exception handlers ────────────────────────────────────────────────────
+    # ── Exception handlers ─────────────────────────────────────────────────────
     @app.exception_handler(PDFTooLargeError)
     async def pdf_too_large_handler(request: Request, exc: PDFTooLargeError):
         return JSONResponse(status_code=413, content={"detail": str(exc), "error_type": "PDFTooLargeError"})
@@ -93,10 +87,12 @@ def create_app() -> FastAPI:
     async def base_error_handler(request: Request, exc: CareerAcceleratorError):
         return JSONResponse(status_code=500, content={"detail": str(exc), "error_type": type(exc).__name__})
 
-    # ── Routers ──────────────────────────────────────────────────────────────
+    # ── Routers ────────────────────────────────────────────────────────────────
     app.include_router(health.router)
     app.include_router(resume.router)
-    app.include_router(generation.router)  # Phase 3 routes
+    app.include_router(auth.router)
+    app.include_router(candidates.router)
+    app.include_router(jobs.router)
 
     return app
 
