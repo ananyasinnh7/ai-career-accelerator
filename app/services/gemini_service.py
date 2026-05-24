@@ -1,12 +1,12 @@
 """
 app/services/gemini_service.py
 ───────────────────────────────
-Google Gemini integration using google-generativeai SDK.
+AI evaluation service using Groq (free tier).
+Uses llama-3.3-70b-versatile — excellent quality, completely free.
 """
 
 import json
-import google.generativeai as genai
-from google.api_core.exceptions import GoogleAPICallError
+from groq import Groq, APIError, APIConnectionError, RateLimitError
 
 from app.core.config import get_settings
 from app.core.exceptions import GeminiAPIError, GeminiParseError
@@ -16,11 +16,8 @@ from app.schemas.resume import ResumeScoreResponse
 logger   = get_logger(__name__)
 settings = get_settings()
 
-# ── Initialise SDK once at module load ─────────────────────────────────────────
-genai.configure(api_key=settings.gemini_api_key)
-_MODEL = genai.GenerativeModel(model_name=settings.gemini_model)
+_client = Groq(api_key=settings.groq_api_key)
 
-# ── Prompt ─────────────────────────────────────────────────────────────────────
 _SYSTEM_PROMPT = """\
 You are an expert technical recruiter and career coach.
 
@@ -58,12 +55,12 @@ _USER_TEMPLATE = """\
 
 def score_resume(resume_text: str, job_description: str) -> ResumeScoreResponse:
     """
-    Send resume + JD to Gemini and return a validated ResumeScoreResponse.
+    Send resume + JD to Groq and return a validated ResumeScoreResponse.
 
     Raises
     ------
     GeminiAPIError   — API call failed
-    GeminiParseError — response could not be parsed into the schema
+    GeminiParseError — response could not be parsed
     """
     user_message = _USER_TEMPLATE.format(
         resume_text=resume_text.strip(),
@@ -71,53 +68,44 @@ def score_resume(resume_text: str, job_description: str) -> ResumeScoreResponse:
     )
 
     logger.info(
-        "Sending request to Gemini model '%s' (resume: %d chars, JD: %d chars)",
-        settings.gemini_model, len(resume_text), len(job_description),
+        "Sending request to Groq llama-3.3-70b (resume: %d chars, JD: %d chars)",
+        len(resume_text), len(job_description),
     )
 
     try:
-        response = _MODEL.generate_content(
-            contents=[
-                {"role": "user", "parts": [_SYSTEM_PROMPT + "\n\n" + user_message]}
+        response = _client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user",   "content": user_message},
             ],
-            generation_config=genai.GenerationConfig(
-                temperature=0.2,
-                max_output_tokens=8192,
-            ),
+            temperature=0.2,
+            max_tokens=8192,
         )
-    except GoogleAPICallError as exc:
-        logger.error("Gemini API call failed: %s", exc)
-        raise GeminiAPIError(f"Gemini API error: {exc}") from exc
+    except RateLimitError as exc:
+        logger.error("Groq rate limit: %s", exc)
+        raise GeminiAPIError(f"AI rate limit exceeded: {exc}") from exc
+    except APIConnectionError as exc:
+        logger.error("Groq connection error: %s", exc)
+        raise GeminiAPIError(f"AI connection error: {exc}") from exc
+    except APIError as exc:
+        logger.error("Groq API error: %s", exc)
+        raise GeminiAPIError(f"AI service error: {exc}") from exc
     except Exception as exc:
-        logger.exception("Unexpected error calling Gemini")
-        raise GeminiAPIError(f"Gemini API error: {exc}") from exc
+        logger.exception("Unexpected error calling Groq")
+        raise GeminiAPIError(f"Unexpected AI error: {exc}") from exc
 
-    raw_text = _extract_text(response)
-    logger.debug("Raw Gemini response: %s", raw_text[:500])
+    raw_text = response.choices[0].message.content or ""
+
+    if not raw_text.strip():
+        raise GeminiAPIError("Groq returned an empty response.")
+
+    logger.debug("Raw Groq response: %s", raw_text[:500])
     return _parse_response(raw_text)
 
 
-# ── Private helpers ────────────────────────────────────────────────────────────
-
-def _extract_text(response) -> str:
-    try:
-        text = response.text
-    except ValueError as exc:
-        finish_reason = (
-            response.candidates[0].finish_reason
-            if response.candidates else "UNKNOWN"
-        )
-        raise GeminiAPIError(
-            f"Gemini returned no content (finish_reason={finish_reason})."
-        ) from exc
-
-    if not text or not text.strip():
-        raise GeminiAPIError("Gemini returned an empty response.")
-
-    return text.strip()
-
-
 def _parse_response(raw: str) -> ResumeScoreResponse:
+    """Strip optional markdown fences and parse JSON."""
     clean = raw.strip()
 
     if clean.startswith("```"):
@@ -129,15 +117,15 @@ def _parse_response(raw: str) -> ResumeScoreResponse:
     try:
         data = json.loads(clean)
     except json.JSONDecodeError as exc:
-        logger.error("Failed to parse Gemini JSON. Raw: %s", raw[:300])
+        logger.error("Failed to parse Groq JSON. Raw: %s", raw[:300])
         raise GeminiParseError(
-            f"Gemini response is not valid JSON: {exc}. Snippet: {raw[:200]}"
+            f"AI response is not valid JSON: {exc}. Snippet: {raw[:200]}"
         ) from exc
 
     try:
         return ResumeScoreResponse(**data)
     except Exception as exc:
-        logger.error("Gemini JSON failed schema validation: %s", data)
+        logger.error("Groq JSON failed schema validation: %s", data)
         raise GeminiParseError(
-            f"Gemini response did not match expected schema: {exc}"
+            f"AI response did not match expected schema: {exc}"
         ) from exc

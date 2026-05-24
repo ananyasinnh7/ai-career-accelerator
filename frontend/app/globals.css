@@ -1,0 +1,108 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; }
+
+body {  
+  background: linear-gradient(135deg, #0a0a0f 0%, #0f0f1a 50%, #0a0f1a 100%);  
+  min-height: 100vh;  
+  color: #e2e8f0;  
+  font-family: 'DM Sans', sans-serif;
+}
+
+.font-display { font-family: 'Syne', sans-serif; }
+
+.glass {  
+  background: rgba(15,15,30,0.8);  
+  border: 1px solid rgba(99,102,241,0.2);  
+  backdrop-filter: blur(10px);
+}
+
+.gradient-text {  
+  background: linear-gradient(135deg, #e8e0ff 0%, #a78bfa 40%, #38bdf8 100%);  
+  -webkit-background-clip: text;  
+  -webkit-text-fill-color: transparent;  
+  background-clip: text;
+}
+
+.btn-primary {  
+  background: linear-gradient(135deg, #7c3aed, #2563eb);  
+  color: white;  
+  border: none;  
+  border-radius: 12px;  
+  padding: 0.75rem 1.5rem;  
+  font-family: 'Syne', sans-serif;  
+  font-weight: 600;  
+  cursor: pointer;  
+  transition: all 0.2s ease;  
+  width: 100%;
+}
+
+.btn-primary:hover { 
+  transform: translateY(-1px); 
+  box-shadow: 0 8px 30px rgba(124,58,237,0.4); 
+}
+
+.btn-primary:disabled { 
+  opacity: 0.5; 
+  cursor: not-allowed; 
+  transform: none; 
+}
+
+.input-field {  
+  width: 100%;  
+  background: rgba(15,15,30,0.8);  
+  border: 1px solid rgba(99,102,241,0.3);  
+  border-radius: 10px;  
+  padding: 0.75rem 1rem;  
+  color: #e2e8f0;  
+  font-size: 0.95rem;  
+  outline: none;  
+  transition: border-color 0.2s;
+}
+
+.input-field:focus { border-color: #a78bfa; }
+
+.input-field::placeholder { color: #475569; }
+
+.card {  
+  background: rgba(15,15,30,0.8);  
+  border: 1px solid rgba(99,102,241,0.2);  
+  border-radius: 16px;  
+  padding: 1.5rem;
+}
+
+.score-high { color: #4ade80; }
+.score-mid  { color: #fbbf24; }
+.score-low  { color: #f87171; }
+
+.skill-chip {  
+  display: inline-block;  
+  background: rgba(239,68,68,0.12);  
+  border: 1px solid rgba(239,68,68,0.3);  
+  color: #fca5a5;  
+  border-radius: 50px;  
+  padding: 0.25rem 0.75rem;  
+  font-size: 0.8rem;  
+  margin: 0.2rem;
+}
+
+.status-badge {  
+  display: inline-block;  
+  border-radius: 50px;  
+  padding: 0.2rem 0.75rem;  
+  font-size: 0.75rem;  
+  font-weight: 600;  
+  text-transform: uppercase;  
+  letter-spacing: 0.05em;
+}
+
+.status-pending     { background: rgba(251,191,36,0.15); color: #fbbf24; border: 1px solid rgba(251,191,36,0.3); }
+.status-shortlisted { background: rgba(74,222,128,0.15); color: #4ade80; border: 1px solid rgba(74,222,128,0.3); }
+.status-rejected    { background: rgba(248,113,113,0.15); color: #f87171; border: 1px solid rgba(248,113,113,0.3); }
+.status-reviewed    { background: rgba(56,189,248,0.15); color: #38bdf8; border: 1px solid rgba(56,189,248,0.3); }
+.status-active      { background: rgba(74,222,128,0.15); color: #4ade80; border: 1px solid rgba(74,222,128,0.3); }
+.status-closed      { background: rgba(248,113,113,0.15); color: #f87171; border: 1px solid rgba(248,113,113,0.3); }

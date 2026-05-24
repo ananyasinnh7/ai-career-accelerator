@@ -1,14 +1,7 @@
 """
 app/main.py
 ────────────
-FastAPI application factory.
-
-Startup sequence
-────────────────
-1. Configure logging.
-2. Create DB tables (idempotent).
-3. Register exception handlers.
-4. Mount routers.
+FastAPI application factory — Phase 2 complete.
 """
 from dotenv import load_dotenv
 load_dotenv()
@@ -18,7 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import health, resume, auth, candidates
+from app.api.routes import health, resume, auth, candidates, jobs
 from app.core.config import get_settings
 from app.core.exceptions import (
     CareerAcceleratorError,
@@ -49,7 +42,7 @@ def create_app() -> FastAPI:
         title="AI Career Accelerator",
         description=(
             "Two-sided talent matchmaking platform. "
-            "Phase 2: Auth + Candidate Profiles + Resume Scoring."
+            "Phase 2: Auth + Candidate Profiles + Job Postings + AI Matching Engine."
         ),
         version="0.2.0",
         lifespan=lifespan,
@@ -57,7 +50,6 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
     )
 
-    # ── CORS ───────────────────────────────────────────────────────────────────
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"] if settings.app_env == "development" else [],
@@ -96,6 +88,7 @@ def create_app() -> FastAPI:
     app.include_router(resume.router)
     app.include_router(auth.router)
     app.include_router(candidates.router)
+    app.include_router(jobs.router)
 
     return app
 
