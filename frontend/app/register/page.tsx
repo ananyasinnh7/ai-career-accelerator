@@ -6,7 +6,6 @@ import toast from 'react-hot-toast'
 import { authApi } from '@/lib/api'
 import { Zap, User, Briefcase } from 'lucide-react'
 
-// 1. The component that uses useSearchParams
 function RegisterForm() {
   const router = useRouter()
   const params = useSearchParams()
@@ -15,20 +14,18 @@ function RegisterForm() {
 
   useEffect(() => {
     if (params.get('role') === 'recruiter') setForm(f => ({ ...f, role: 'recruiter' }))
-  }, [params]) // Fixed: Added 'params' to dependency array to stop the build from crashing
+  }, [])
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     try {
       await authApi.register(form)
       toast.success('Account created! Please login.')
       router.push('/login')
-    } catch (err) {
+    } catch (err: any) {
       toast.error(err.response?.data?.detail || 'Registration failed')
-    } finally { 
-      setLoading(false) 
-    }
+    } finally { setLoading(false) }
   }
 
   return (
@@ -46,14 +43,18 @@ function RegisterForm() {
 
       <div className="card">
         <div className="grid grid-cols-2 gap-3 mb-6">
-          {['candidate', 'recruiter'].map(role => (
+          {(['candidate', 'recruiter'] as const).map(role => (
             <button key={role} type="button" onClick={() => setForm(f => ({ ...f, role }))}
               className="flex flex-col items-center gap-2 p-4 rounded-xl transition-all"
-              style={{ border: `1px solid ${form.role === role ? '#a78bfa' : 'rgba(99,102,241,0.2)'}`, background: form.role === role ? 'rgba(167,139,250,0.1)' : 'transparent' }}>
+              style={{
+                border: `1px solid ${form.role === role ? '#a78bfa' : 'rgba(99,102,241,0.2)'}`,
+                background: form.role === role ? 'rgba(167,139,250,0.1)' : 'transparent'
+              }}>
               {role === 'candidate'
                 ? <User size={20} color={form.role === role ? '#a78bfa' : '#475569'} />
                 : <Briefcase size={20} color={form.role === role ? '#a78bfa' : '#475569'} />}
-              <span className="text-sm font-medium capitalize" style={{ color: form.role === role ? '#a78bfa' : '#475569' }}>{role}</span>
+              <span className="text-sm font-medium capitalize"
+                style={{ color: form.role === role ? '#a78bfa' : '#475569' }}>{role}</span>
             </button>
           ))}
         </div>
@@ -61,29 +62,32 @@ function RegisterForm() {
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
             <label className="text-xs text-slate-400 mb-1 block uppercase tracking-wider">Full Name</label>
-            <input className="input-field" placeholder="Your full name" value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} required />
+            <input className="input-field" placeholder="Your full name"
+              value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} required />
           </div>
           <div>
             <label className="text-xs text-slate-400 mb-1 block uppercase tracking-wider">Email</label>
-            <input className="input-field" type="email" placeholder="you@example.com" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} required />
+            <input className="input-field" type="email" placeholder="you@example.com"
+              value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} required />
           </div>
           <div>
             <label className="text-xs text-slate-400 mb-1 block uppercase tracking-wider">Password</label>
-            <input className="input-field" type="password" placeholder="Min 8 chars, 1 uppercase, 1 number" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} required />
+            <input className="input-field" type="password" placeholder="Min 8 chars, 1 uppercase, 1 number"
+              value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} required />
           </div>
           <button type="submit" disabled={loading} className="btn-primary mt-2">
             {loading ? 'Creating account...' : 'Create Account'}
           </button>
         </form>
         <p className="text-center text-slate-400 text-sm mt-4">
-          Already have an account? <Link href="/login" className="text-purple-400 hover:text-purple-300">Sign in</Link>
+          Already have an account?{' '}
+          <Link href="/login" className="text-purple-400 hover:text-purple-300">Sign in</Link>
         </p>
       </div>
     </div>
   )
 }
 
-// 2. The default export that wraps it in Suspense
 export default function RegisterPage() {
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12">
