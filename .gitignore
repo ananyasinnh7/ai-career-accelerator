@@ -1,40 +1,19 @@
-# ── SECRETS (NEVER UPLOAD THESE) ──
-.env
-.env.*
-*.pem
-
-# ── Python & Environments ──
+# Python
 __pycache__/
-*.py[cod]
-*$py.class
-venv/
-env/
+*.pyc
+*.pyo
 .venv/
-
-# ── Local Databases ──
+venv/
 *.db
-*.sqlite3
-test.db
 
-# ── IDEs & OS Files ──
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
-
-# ── Testing & Logs ──
-.pytest_cache/
-.coverage
-htmlcov/
-*.log
-
-# ── Streamlit ──
-.streamlit/
+# Environment
+.env
+.env.local
 
 # Next.js
 frontend/node_modules/
 frontend/.next/
-frontend/.env.local
+frontend/out/
 
 # MacOS
 .DS_Store
