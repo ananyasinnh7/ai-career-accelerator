@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import health, resume, auth, candidates, jobs, companies
+from app.api.routes import health, resume, auth, candidates, jobs, companies, resume_versions
 from app.core.config import get_settings
 from app.core.exceptions import (
     CareerAcceleratorError,
@@ -42,7 +42,7 @@ def create_app() -> FastAPI:
         title="AI Career Accelerator",
         description=(
             "Two-sided talent matchmaking platform. "
-            "Phase 3: Email Verification + Password Reset + Notifications + Company Profiles + Advanced Matching."
+            "Phase 3: Company Profiles + Advanced Matching + Multiple Resumes + Auto-match."
         ),
         version="0.3.0",
         lifespan=lifespan,
@@ -94,6 +94,7 @@ def create_app() -> FastAPI:
     app.include_router(candidates.router)
     app.include_router(jobs.router)
     app.include_router(companies.router)
+    app.include_router(resume_versions.router)
 
     return app
 
