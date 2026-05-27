@@ -3,20 +3,22 @@ app/api/routes/jobs.py
 ───────────────────────
 Job posting endpoints:
 
-    POST   /jobs                    → recruiter creates a job
-    GET    /jobs                    → anyone browses active jobs
-    GET    /jobs/mine               → recruiter sees their own jobs
-    GET    /jobs/{id}               → single job detail
-    PUT    /jobs/{id}               → recruiter updates their job
-    DELETE /jobs/{id}               → recruiter closes their job
-    POST   /jobs/{id}/match-me      → candidate matches themselves to a job
-    GET    /jobs/{id}/candidates    → recruiter sees ranked candidate list
-    PUT    /jobs/{id}/matches/{mid} → recruiter updates a match status
+    POST   /jobs                      → recruiter creates a job
+    GET    /jobs                      → anyone browses active jobs
+    GET    /jobs/mine                 → recruiter sees their own jobs
+    GET    /jobs/{id}                 → single job detail
+    PUT    /jobs/{id}                 → recruiter updates their job
+    DELETE /jobs/{id}                 → recruiter closes their job
+    POST   /jobs/{id}/match-me        → candidate matches themselves to a job
+    GET    /jobs/{id}/candidates      → recruiter sees ranked candidate list
+    PUT    /jobs/{id}/matches/{mid}   → recruiter updates a match status
+    GET    /jobs/{id}/auto-matches    → recruiter sees auto-matched candidates (STEP 6)
+    GET    /jobs/{id}/auto-matches-stats → auto-match statistics (STEP 6)
 """
 
 import asyncio
 from functools import partial
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -40,6 +42,7 @@ from app.schemas.match import (
     MatchWithJobResponse,
     PaginatedMatches,
 )
+from app.schemas.resume_version import AutoMatchResponse, AutoMatchListResponse
 from app.services.job_service import (
     create_job,
     delete_job,
@@ -54,6 +57,7 @@ from app.services.match_service import (
     match_candidate_to_job,
     update_match_status,
 )
+from app.services.matching_service import MatchingService
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 logger = get_logger(__name__)
@@ -62,7 +66,7 @@ _recruiter = Depends(require_role(UserRole.recruiter))
 _candidate = Depends(require_role(UserRole.candidate))
 
 
-# ── POST /jobs ─────────────────────────────────────────────────────────────────
+# ── POST /jobs ──────────────────────────────────────────────────────────────
 
 @router.post(
     "",
@@ -75,11 +79,21 @@ def create_job_posting(
     recruiter: User = _recruiter,
     db: Session = Depends(get_db),
 ) -> JobPostingResponse:
+    """Create a new job posting and trigger auto-matching (STEP 6)."""
     job = create_job(db, recruiter, payload)
+    
+    # Trigger auto-match (STEP 6)
+    try:
+        MatchingService.trigger_auto_match(db, job.id)
+        logger.info(f"Auto-match triggered for job {job.id}")
+    except Exception as exc:
+        logger.warning(f"Auto-match failed for job {job.id}: {exc}")
+        # Don't fail the request, just log the error
+    
     return JobPostingResponse.model_validate(job)
 
 
-# ── GET /jobs ──────────────────────────────────────────────────────────────────
+# ── GET /jobs ───────────────────────────────────────────────────────────────
 
 @router.get(
     "",
@@ -99,7 +113,7 @@ def list_jobs(
     )
 
 
-# ── GET /jobs/mine ─────────────────────────────────────────────────────────────
+# ── GET /jobs/mine ─────────────────────────────────────────────────────────
 
 @router.get(
     "/mine",
@@ -119,7 +133,7 @@ def list_my_jobs(
     )
 
 
-# ── GET /jobs/{id} ─────────────────────────────────────────────────────────────
+# ── GET /jobs/{id} ─────────────────────────────────────────────────────────
 
 @router.get(
     "/{job_id}",
@@ -136,7 +150,7 @@ def get_job(
     return JobPostingResponse.model_validate(job)
 
 
-# ── PUT /jobs/{id} ─────────────────────────────────────────────────────────────
+# ── PUT /jobs/{id} ─────────────────────────────────────────────────────────
 
 @router.put(
     "/{job_id}",
@@ -156,7 +170,7 @@ def update_job_posting(
     return JobPostingResponse.model_validate(job)
 
 
-# ── DELETE /jobs/{id} ──────────────────────────────────────────────────────────
+# ── DELETE /jobs/{id} ────────────────────────────────────────────────────────
 
 @router.delete(
     "/{job_id}",
@@ -175,7 +189,7 @@ def close_job_posting(
     return {"message": f"Job {job_id} has been closed successfully."}
 
 
-# ── POST /jobs/{id}/match-me ───────────────────────────────────────────────────
+# ── POST /jobs/{id}/match-me ────────────────────────────────────────────────
 
 @router.post(
     "/{job_id}/match-me",
@@ -219,7 +233,7 @@ async def match_me_to_job(
     )
 
 
-# ── GET /jobs/{id}/candidates ──────────────────────────────────────────────────
+# ── GET /jobs/{id}/candidates ──────────────────────────────────────────────
 
 @router.get(
     "/{job_id}/candidates",
@@ -244,7 +258,7 @@ def get_job_candidates(
     )
 
 
-# ── PUT /jobs/{id}/matches/{mid} ───────────────────────────────────────────────
+# ── PUT /jobs/{id}/matches/{mid} ───────────────────────────────────────────
 
 @router.put(
     "/{job_id}/matches/{match_id}",
@@ -265,7 +279,7 @@ def update_candidate_match_status(
     return MatchResponse.model_validate(match)
 
 
-# ── GET /jobs/matches/mine ─────────────────────────────────────────────────────
+# ── GET /jobs/matches/mine ────────────────────────────────────────────────
 
 @router.get(
     "/matches/mine",
@@ -283,3 +297,111 @@ def get_my_matches(
         total=total, page=page, size=size,
         results=[MatchResponse.model_validate(m) for m in matches],
     )
+
+
+# ── GET /jobs/{id}/auto-matches ────────────────────────────────────────────
+# STEP 6: Advanced Matching Engine
+
+@router.get(
+    "/{job_id}/auto-matches",
+    response_model=dict,
+    summary="Get auto-matched candidates (recruiter only) — STEP 6",
+    description="Get all candidates that were auto-matched when this job was posted.",
+)
+def get_job_auto_matches(
+    job_id: int,
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=10, ge=1, le=50),
+    recruiter: User = _recruiter,
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Get auto-matched candidates for a job with pagination.
+
+    **Requirements:**
+    - User must be authenticated and be a recruiter
+    - User must own the job
+
+    Returns paginated list of auto-matched candidates with scores.
+    """
+    # Check if recruiter owns the job
+    job = get_job_by_id(db, job_id)
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    if job.recruiter_id != recruiter.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only view auto-matches for your own jobs"
+        )
+
+    # Get auto-matches
+    matches, total = MatchingService.get_job_auto_matches(db, job_id, skip=(page - 1) * size, limit=size)
+
+    # Enrich with candidate info
+    results = []
+    for match in matches:
+        candidate = db.query(User).filter_by(id=match.candidate_id).first()
+        results.append({
+            "id": match.id,
+            "job_id": match.job_id,
+            "candidate_id": match.candidate_id,
+            "candidate_email": candidate.email if candidate else None,
+            "candidate_name": candidate.full_name if candidate else None,
+            "score": match.score,
+            "missing_skills": match.missing_skills,
+            "summary": match.summary,
+            "status": match.status,
+            "created_at": match.created_at,
+        })
+
+    return {
+        "total": total,
+        "page": page,
+        "size": size,
+        "results": results
+    }
+
+
+@router.get(
+    "/{job_id}/auto-matches-stats",
+    response_model=dict,
+    summary="Get auto-match statistics (recruiter only) — STEP 6",
+    description="Get matching statistics for a job posting.",
+)
+def get_auto_match_stats(
+    job_id: int,
+    recruiter: User = _recruiter,
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Get auto-matching statistics for a job.
+
+    **Requirements:**
+    - User must be authenticated and be a recruiter
+    - User must own the job
+
+    Returns:
+    {
+        "total_matches": int,
+        "notified": int,
+        "accepted": int,
+        "rejected": int,
+        "avg_score": float,
+        "highest_score": int,
+        "lowest_score": int
+    }
+    """
+    # Check if recruiter owns the job
+    job = get_job_by_id(db, job_id)
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    if job.recruiter_id != recruiter.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only view stats for your own jobs"
+        )
+
+    stats = MatchingService.get_matching_stats(db, job_id)
+    return stats
