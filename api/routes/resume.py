@@ -32,6 +32,7 @@ from app.db.session import get_db
 from app.schemas.resume import ResumeScoreResponse
 from app.services.gemini_service import score_resume
 from app.services.pdf_service import extract_text_from_pdf
+from app.workers.tasks import score_resume_task
 
 router = APIRouter(prefix="/api/v1", tags=["Resume Scoring"])
 logger = get_logger(__name__)
